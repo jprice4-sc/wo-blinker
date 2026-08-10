@@ -1,0 +1,39 @@
+{
+  "version": "0.2",
+  "language": "en_us",
+  "dictionaryDefinitions": [
+    {
+      "name": "project-dictionary",
+      "path": "cspell-project-dictionary.txt",
+      "description": "Dictionary of words used in this project",
+      "addWords": true,
+      "scope": "workspace"
+    },
+    {
+      "name": "uv-template-dictionary",
+      "path": "cspell-uv-template-dictionary.txt",
+      "description": "Dictionary of words used in files provided by the uv-template",
+      "addWords": false,
+      "scope": "workspace"
+    }
+  ],
+  "dictionaries": [
+    "project-dictionary",
+    "uv-template-dictionary",
+    "c",
+    "cpp",
+    "cpp-compound-words",
+    "coding-compound-terms",
+    "python",
+    "rust"
+  ],
+  "ignorePaths": [
+    "reference/**",
+    "site/**",
+    ".venv/**",
+    "**/__pycache__/**",
+    "**/*.png",
+    "examples/synthetic_out/**"
+  ],
+  "useGitignore": true
+}

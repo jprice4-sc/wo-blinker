@@ -1,0 +1,25 @@
+# From python developer tools
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+__pycache__/
+.venv
+dist/
+.dist/
+
+# where docs are generated
+site/
+
+# generated analysis outputs
+blinker_out/
+examples/synthetic_out/
+
+# Track cspell
+!cspell-dict.txt
+
+# Track for shared VSCode settings
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# From the template apply script
+*.template_suggested

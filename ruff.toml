@@ -1,0 +1,127 @@
+# Exclude a variety of commonly ignored directories.
+exclude = [
+  ".bzr",
+  ".direnv",        # cSpell:ignore direnv
+  ".eggs",
+  ".git",
+  ".git-rewrite",
+  ".hg",
+  ".mypy_cache",
+  ".nox",
+  ".pants.d",
+  ".pytype",        # cSpell:ignore pytype
+  ".ruff_cache",
+  ".svn",
+  ".tox",
+  ".venv",
+  "__pypackages__", # cSpell:ignore pypackages
+  "_build",
+  "buck-out",
+  "build",
+  "dist",
+  "node_modules",
+  "reference",      # Verbatim legacy reference code, preserved but not maintained
+  "stubs",          # Stubs folder for mypy
+  "venv",
+]
+
+# Same as Black.
+indent-width = 4
+line-length = 120
+
+# Minimum supported version
+target-version = "py312"
+
+[lint]
+# Enable ALL by default and remove the rules we don't want under the ignore section.
+extend-ignore = [
+  "CPY001", # No repo-wide copyright-notice convention is defined for this project
+  # ADD HERE ANY OTHER RULE YOU WANT TO IGNORE
+]
+extend-unsafe-fixes = [
+  "F401", # unused-import
+  "F841", # unused-variable
+  # ADD HERE ANY OTHER RULE YOU DON'T WONT TO BE AUTO-FIXED
+]
+ignore = [
+  "COM812", # The missing trailing comma rule conflicts with the ruff linter, see https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
+  "D105",   # Docstrings not required for magic methods
+  "D202",   # Empty line after a docstring
+  "D301",   # Otherwise cannot include """-delimited docstrings in examples
+  "EM101",  # Allow for string literals in exception messages
+  "EM102",  # Allow string literals and f-strings in exception message
+  "FIX002", # Do not raise lint errors on existing TODOs
+  "ISC001", # single-line-implicit-string-concatenation conflicts with the linter, see https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
+  "TD002",  # Allow missing TODO: author
+  "TD003",  # Allow missing TODO: link
+  "TRY003", # Allow exceptions with messages
+  # TODO: Review RET505
+  # "RET505", # Allow else / ifelse statements if there is a return statement in the preceding if block
+]
+select = ["ALL"]
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[lint.per-file-ignores]
+"run_blinker.py" = [
+  "INP001", # Top-level run script, not part of an importable package
+  "T201",   # The run script prints its progress and report to stdout
+]
+"**/examples/**/*.*py*" = [ # matches both py and ipynb files
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D106",
+  "D107",   # Missing docstrings
+  "INP001", # Allow implicit namespace packages for examples
+  "S101",   # Use of assert
+  "T201",   # Allow use of print
+]
+"**/tests/**/*.py" = [
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D106",
+  "D107",    # Missing docstrings
+  "INP001",  # Allow implicit namespace packages for tests
+  "N801",    # Allow use of non CapWords for test classes
+  "N801",    # Allow Test_some_function for test class names
+  "N802",    # Allow test_SomeClass for test methods
+  "PLR2004", # Allow magic-value comparisons in assertions
+  "PLR0913", # Allow more than 6 method arguments
+  "PT004",   # Do not require leading underscore for pytest fixtures returning None
+  "S101",    # Use of assert
+  "SLF001",  # Access private methods
+]
+
+[lint.flake8-import-conventions]
+[lint.flake8-import-conventions.extend-aliases]
+"numpy.ma" = "dd"
+
+[lint.mccabe]
+# Unlike Flake8, default to a complexity level of 10.
+max-complexity = 10
+
+[lint.pycodestyle]
+ignore-overlong-task-comments = true
+
+[lint.pydocstyle]
+# Use Google-style docstrings.
+convention = "google"
+
+[lint.flake8-type-checking]
+exempt-modules = ["typing"]
+
+[format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"

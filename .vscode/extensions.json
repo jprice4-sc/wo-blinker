@@ -1,0 +1,11 @@
+{
+    "recommendations": [
+        "charliermarsh.ruff",
+        "gruntfuggly.todo-tree",
+        "ms-python.python",
+        "njpwerner.autodocstring",
+        "ritwickdey.liveserver",
+        "streetsidesoftware.code-spell-checker",
+        "tamasfe.even-better-toml"
+    ]
+}

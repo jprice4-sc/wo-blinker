@@ -1,0 +1,87 @@
+[project]
+authors = [
+  { email = "jprice4@snapchat.com" },
+]
+dependencies = [
+  "matplotlib>=3.8",
+  "numpy>=1.26",
+  "scikit-image>=0.22",
+  "scipy>=1.11",
+  "tifffile>=2024.1.30",
+]
+description = "Systematic blinking-statistics analysis of TIFF time-series stacks (ON/OFF dwell times, intensity amplitudes, duty cycle)."
+license = { file = "LICENSE" }
+name = "wo-blinker"
+readme = "README.md"
+requires-python = ">=3.12,<4.0"
+version = "0.1.0"
+
+[dependency-groups]
+dev = [
+  # Code checking
+  "basedmypy",
+  "pip-audit",
+  "ruff",
+  # Running tests
+  "pytest",
+  # Documentation
+  "pydoctor",
+  # TEMPLATE: Add additional dependencies of your development environment here
+]
+
+[tool.uv]
+default-groups = ["dev"]
+index-url = "https://registry.snapchat.com/python/virtual/"
+native-tls = true
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["blinker"]
+
+# The numeric core is built on numpy/scipy/scikit-image, whose public APIs are
+# largely untyped. basedmypy's strictest checks would otherwise bury real type
+# errors under third-party-typing noise, so we relax the "Any", return-Any and
+# untyped-call checks while keeping full checking of our own signatures.
+[tool.mypy]
+disallow_any_decorated = false
+disallow_any_explicit = false
+disallow_any_expr = false
+disallow_untyped_calls = false
+exclude = [".venv", "reference"]
+files = ["."]
+warn_return_any = false
+
+# The scientific stack (scipy/scikit-image/matplotlib/tifffile) ships partial or
+# incorrect type stubs that basedmypy rejects as "incomplete functions". Treat
+# them as opaque so calls into them type as Any rather than erroring, while our
+# own code stays fully checked.
+[[tool.mypy.overrides]]
+follow_imports = "skip"
+ignore_missing_imports = true
+module = [
+  "cv2",
+  "matplotlib",
+  "matplotlib.*",
+  "mpl_toolkits.*",
+  "scipy",
+  "scipy.*",
+  "skimage",
+  "skimage.*",
+  "tifffile",
+]
+
+[tool.pydoctor]
+add-package = ["blinker"]
+docformat = "google"
+html-output = "site"
+make-html = true
+project-name = "blinker"
+template-dir = ["pydoctor_assets/assets"]
+# Supports hyperlinks to other library documentation
+intersphinx = [
+  "https://docs.python.org/3/objects.inv",
+]
+verbose = true

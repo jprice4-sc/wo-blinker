@@ -1,0 +1,12 @@
+# Taplo: https://taplo.tamasfe.dev/
+# is a TOML toolkit with a cli and VSCodium extension: even-better-toml: https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml
+
+include = ["**/*.toml"]
+
+[formatting]
+align_entries = false
+array_auto_collapse = false
+reorder_arrays = true
+reorder_inline_tables = true
+reorder_keys = true
+# See formatter options at https://taplo.tamasfe.dev/configuration/formatter-options.html
