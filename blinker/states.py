@@ -1,6 +1,6 @@
 """Two-state segmentation of intensity traces and dwell-time extraction.
 
-Each emitter trace is modelled as switching between a dark (OFF) and a bright
+Each emitter trace is modeled as switching between a dark (OFF) and a bright
 (ON) level. We recover those two levels per trace by clustering the intensity
 samples into two groups (a 1-D Gaussian mixture by default, with k-means and
 Otsu alternatives), place a threshold at the crossover, and read off the ON/OFF
@@ -93,7 +93,7 @@ def _kmeans_1d(x: NDArray[np.float64]) -> tuple[float, float, NDArray[np.bool_]]
         x: Sample values.
 
     Returns:
-        The low centre, high centre, and a boolean mask that is ``True`` for
+        The low center, high center, and a boolean mask that is ``True`` for
         samples assigned to the high cluster.
     """
     lo = float(np.percentile(x, _INIT_LOW_PCT))
@@ -112,7 +112,7 @@ def _kmeans_1d(x: NDArray[np.float64]) -> tuple[float, float, NDArray[np.bool_]]
 
 
 def _gaussian(x: NDArray[np.float64], mean: float, var: float) -> NDArray[np.float64]:
-    """Evaluate an (unnormalised-safe) Gaussian density."""
+    """Evaluate an (unnormalized-safe) Gaussian density."""
     return np.exp(-0.5 * (x - mean) ** 2 / var) / np.sqrt(2.0 * np.pi * var)
 
 
@@ -317,7 +317,7 @@ def analyze_trace(trace: NDArray[np.float64], index: int, params: AnalysisParams
 
 
 def analyze_traces(traceset: TraceSet, params: AnalysisParams) -> list[TraceResult]:
-    """Analyse every trace in a trace set.
+    """Analyze every trace in a trace set.
 
     Args:
         traceset: The extracted traces.

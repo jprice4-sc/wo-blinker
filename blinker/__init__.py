@@ -22,11 +22,13 @@ from .pipeline import (
     analyze_directory,
     analyze_file,
     analyze_stack,
+    combine_results,
     find_stacks,
+    save_combined_summary,
     save_results,
 )
 from .states import StateFit, TraceResult, analyze_trace, analyze_traces, segment_two_state
-from .stats import AggregateStats, DwellStats, aggregate
+from .stats import AggregateStats, CombinedStats, DwellStats, aggregate
 from .traces import TraceSet, extract_traces
 
 __version__ = "0.1.0"
@@ -35,6 +37,7 @@ __all__ = [
     "AggregateStats",
     "AnalysisParams",
     "AnalysisResult",
+    "CombinedStats",
     "DwellStats",
     "Spots",
     "Stack",
@@ -47,11 +50,13 @@ __all__ = [
     "analyze_stack",
     "analyze_trace",
     "analyze_traces",
+    "combine_results",
     "detect_spots",
     "extract_traces",
     "find_stacks",
     "load_stack",
     "project",
+    "save_combined_summary",
     "save_results",
     "segment_two_state",
     "stack_from_array",

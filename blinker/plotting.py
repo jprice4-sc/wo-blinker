@@ -1,6 +1,6 @@
 """Figure generation for a completed analysis.
 
-Two figures summarise a run: an *overview* (detection image with emitters
+Two figures summarize a run: an *overview* (detection image with emitters
 circled, the field-wide transient, and the strongest blinker traces with their
 fitted thresholds) and a *statistics* panel (ON/OFF dwell-time complementary
 CDFs with the fitted models, plus amplitude and duty-cycle histograms).

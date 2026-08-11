@@ -1,4 +1,4 @@
-"""Loading of TIFF time-series stacks into a normalised in-memory representation.
+"""Loading of TIFF time-series stacks into a normalized in-memory representation.
 
 Microscopy TIFFs come in many shapes: a plain multi-page ``(T, H, W)`` stack, or
 a hyperstack carrying singleton channel/z axes (``TZCYX`` and friends). This

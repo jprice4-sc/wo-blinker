@@ -67,7 +67,7 @@ class SimulatedStack:
 
     Attributes:
         data: ``(n_frames, height, width)`` float32 image data.
-        positions: ``(n_emitters, 2)`` integer ``(row, col)`` emitter centres.
+        positions: ``(n_emitters, 2)`` integer ``(row, col)`` emitter centers.
         states: ``(n_emitters, n_frames)`` boolean ON/OFF ground truth.
         params: The parameters used to generate the stack.
     """
@@ -98,7 +98,7 @@ def _telegraph_states(rng: np.random.Generator, params: SimParams) -> NDArray[np
 
 
 def _emitter_positions(rng: np.random.Generator, params: SimParams) -> NDArray[np.int64]:
-    """Place emitter centres either on a lattice or at random within the margin."""
+    """Place emitter centers either on a lattice or at random within the margin."""
     lo_r, hi_r = params.margin, params.height - params.margin
     lo_c, hi_c = params.margin, params.width - params.margin
     if params.layout == "grid":

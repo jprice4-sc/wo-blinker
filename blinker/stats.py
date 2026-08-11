@@ -140,6 +140,31 @@ class AggregateStats:
     transient: StretchedExpFit | None
 
 
+@dataclass(frozen=True, slots=True)
+class CombinedStats:
+    """Blinking statistics pooled across several stacks.
+
+    Attributes:
+        n_stacks: Number of stacks combined.
+        n_spots: Total detected emitters across all stacks.
+        n_blinkers: Total genuine blinkers across all stacks.
+        blink_fraction: ``n_blinkers / n_spots`` over the whole set.
+        on: ON dwell-time statistics pooled across every blinker.
+        off: OFF dwell-time statistics pooled across every blinker.
+        amplitude: Distribution of blinker ON/OFF amplitudes, all stacks.
+        duty_cycle: Distribution of blinker duty cycles, all stacks.
+    """
+
+    n_stacks: int
+    n_spots: int
+    n_blinkers: int
+    blink_fraction: float
+    on: DwellStats
+    off: DwellStats
+    amplitude: Summary
+    duty_cycle: Summary
+
+
 def summarize(values: NDArray[np.float64]) -> Summary:
     """Compute descriptive statistics, tolerating an empty input.
 
@@ -285,4 +310,35 @@ def aggregate(
         amplitude=summarize(amplitudes),
         duty_cycle=summarize(duty),
         transient=fit_transient(global_trace, params.frame_interval_s),
+    )
+
+
+def combine(per_stack_results: list[list[TraceResult]], params: AnalysisParams) -> CombinedStats:
+    """Pool per-trace results from many stacks into one combined summary.
+
+    Every blinker from every stack contributes to the pooled dwell-time,
+    amplitude and duty-cycle statistics.
+
+    Args:
+        per_stack_results: One list of per-trace results per stack.
+        params: Analysis parameters (supplies the power-law cutoff).
+
+    Returns:
+        The :class:`CombinedStats`.
+    """
+    blinkers = [r for stack in per_stack_results for r in stack if r.is_blinker]
+    n_spots = sum(len(stack) for stack in per_stack_results)
+    on = np.concatenate([r.on_times for r in blinkers]) if blinkers else np.empty(0)
+    off = np.concatenate([r.off_times for r in blinkers]) if blinkers else np.empty(0)
+    amplitudes = np.array([r.fit.amplitude for r in blinkers], dtype=np.float64)
+    duty = np.array([r.duty_cycle for r in blinkers], dtype=np.float64)
+    return CombinedStats(
+        n_stacks=len(per_stack_results),
+        n_spots=n_spots,
+        n_blinkers=len(blinkers),
+        blink_fraction=len(blinkers) / n_spots if n_spots else 0.0,
+        on=_dwell_stats(on, params.power_law_xmin_s),
+        off=_dwell_stats(off, params.power_law_xmin_s),
+        amplitude=summarize(amplitudes),
+        duty_cycle=summarize(duty),
     )

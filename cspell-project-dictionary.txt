@@ -59,3 +59,4 @@ argparse
 inferno
 crimson
 duty
+jprice

@@ -9,7 +9,13 @@ import numpy as np
 import tifffile
 
 from blinker.params import AnalysisParams
-from blinker.pipeline import analyze_directory, analyze_stack, save_results
+from blinker.pipeline import (
+    analyze_directory,
+    analyze_stack,
+    combine_results,
+    save_combined_summary,
+    save_results,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -96,3 +102,21 @@ def test_analyze_directory_empty(tmp_path: Path) -> None:
     results = analyze_directory(tmp_path, tmp_path / "out", AnalysisParams())
     assert results == []
     assert (tmp_path / "out" / "batch_summary.csv").is_file()
+
+
+def test_combine_results_pools_across_stacks(sim_stack: Stack, tmp_path: Path) -> None:
+    params = AnalysisParams(frame_interval_s=0.05)
+    results = [analyze_stack(sim_stack, params), analyze_stack(sim_stack, params)]
+    combined = combine_results(results, params)
+
+    assert combined.n_stacks == 2
+    assert combined.n_spots == sum(r.stats.n_spots for r in results)
+    assert combined.n_blinkers == sum(r.stats.n_blinkers for r in results)
+    # Pooling two identical stacks doubles the dwell-time sample count.
+    assert combined.on.summary.n == 2 * results[0].stats.on.summary.n
+
+    path = save_combined_summary(combined, tmp_path)
+    assert path.name == "combined_summary.json"
+    payload = json.loads(path.read_text())
+    assert isinstance(payload, dict)
+    assert payload["n_stacks"] == 2

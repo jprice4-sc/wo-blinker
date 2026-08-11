@@ -3,7 +3,7 @@
 Systematic blinking-statistics analysis of TIFF time-series stacks.
 
 Given a multi-page TIFF (pages = frames) of blinking emitters — single molecules,
-quantum dots, defect centres, microLED sites — `blinker` automatically finds the
+quantum dots, defect centers, microLED sites — `blinker` automatically finds the
 emitters, extracts a background-subtracted intensity trace for each, segments
 every trace into ON/OFF states, and reports the blinking statistics:
 
@@ -24,11 +24,11 @@ TIFF stack ──► detect spots ──► extract traces ──► two-state �
 
 | stage | module | what it does |
 | --- | --- | --- |
-| load | [loading.py](blinker/loading.py) | read a TIFF into a normalised `(T, H, W)` float32 `Stack` |
+| load | [loading.py](blinker/loading.py) | read a TIFF into a normalized `(T, H, W)` float32 `Stack` |
 | detect | [detection.py](blinker/detection.py) | local-maxima peak finding on a temporal projection (default: per-pixel std) |
 | extract | [traces.py](blinker/traces.py) | sum a circular aperture per emitter, subtract a per-frame background annulus |
 | segment | [states.py](blinker/states.py) | 1-D two-state clustering (GMM / k-means / Otsu) → threshold → ON/OFF dwell runs |
-| aggregate | [stats.py](blinker/stats.py) | pool dwell times, fit distributions, summarise amplitudes / duty cycle / transient |
+| aggregate | [stats.py](blinker/stats.py) | pool dwell times, fit distributions, summarize amplitudes / duty cycle / transient |
 | orchestrate | [pipeline.py](blinker/pipeline.py) | run all stages and write CSV / JSON / PNG outputs |
 
 Analysis parameters live in a single immutable [`AnalysisParams`](blinker/params.py).
@@ -49,7 +49,7 @@ as a plainly visible constant — edit them and run:
 uv run python run_blinker.py
 ```
 
-It analyses every `*.tif` / `*.tiff` in `INPUT_DIR` with the same parameters. The
+It analyzes every `*.tif` / `*.tiff` in `INPUT_DIR` with the same parameters. The
 constants map one-to-one onto [`AnalysisParams`](blinker/params.py):
 
 ```python
@@ -71,7 +71,10 @@ Outputs, written under `OUTPUT_DIR`:
 - `<stack name>/on_dwell_times.csv`, `off_dwell_times.csv` — pooled dwell times (s).
 - `<stack name>/summary.json` — aggregate statistics and the parameters used.
 - `<stack name>/overview.png`, `statistics.png` — diagnostic figures.
-- `batch_summary.csv` — one row per stack (blinker counts, medians, transient τ).
+- `batch_summary.csv` — **one row per stack** (blinker counts, dwell medians,
+  amplitude, transient τ).
+- `combined_summary.json` — **all stacks pooled together**: total spots/blinkers,
+  and pooled ON/OFF dwell, amplitude and duty-cycle statistics with their fits.
 
 ## Python API
 
@@ -89,7 +92,7 @@ if result.stats.on.power_law:
 save_results(result, "results")
 ```
 
-Analyse a whole folder in one call (this is what the run script uses):
+Analyze a whole folder in one call (this is what the run script uses):
 
 ```python
 from blinker import AnalysisParams, analyze_directory
@@ -108,14 +111,26 @@ traces = extract_traces(stack, spots, params)
 results = analyze_traces(traces, params)  # per-emitter TraceResult list
 ```
 
-## Demo (no data required)
+## Examples
 
 `blinker.synthetic` generates a ground-truth stack of telegraph-blinking Gaussian
-emitters (optionally with a photo-activation transient). The example writes a
-synthetic TIFF and runs the full analysis on it:
+emitters (optionally with a photo-activation transient). The demo writes a
+synthetic TIFF and runs the full analysis on it (no data required):
 
 ```bash
 uv run python examples/analyze_synthetic.py
+```
+
+[examples/power_series.py](examples/power_series.py) compares the **same emitters
+across a power series**: point it at a folder of same-FOV stacks acquired at
+increasing power (power read from the filename, e.g. `5%_...`, `10%_...`). It
+detects emitters once on a combined projection, reads those identical ROIs in
+every stack, and tracks ON/OFF dwell times, duty cycle and blink rate vs power
+(`power_series.csv`, `power_trends.csv`, `power_trends.png`). It uses only the
+public API and does not change the package.
+
+```bash
+uv run python examples/power_series.py
 ```
 
 ## Development
@@ -133,4 +148,4 @@ uv run pydoctor            # API docs -> site/
 - The reported ON/OFF dwell times **exclude the first and last run** of each
   trace, which are censored (the true switch happened outside the record).
 - `reference/avi_microled_reference.py` preserves the original streaming-AVI
-  microLED script this package generalised from; it is not part of the package.
+  microLED script this package generalized from; it is not part of the package.

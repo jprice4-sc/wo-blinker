@@ -13,6 +13,7 @@ site/
 # generated analysis outputs
 blinker_out/
 examples/synthetic_out/
+power_series_out/
 
 # Track cspell
 !cspell-dict.txt

@@ -1,4 +1,4 @@
-"""Tests for TIFF loading and stack normalisation."""
+"""Tests for TIFF loading and stack normalization."""
 
 from __future__ import annotations
 

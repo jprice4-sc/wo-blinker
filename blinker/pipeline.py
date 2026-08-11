@@ -1,4 +1,4 @@
-"""End-to-end single-stack analysis and result serialisation.
+"""End-to-end single-stack analysis and result serialization.
 
 :func:`analyze_stack` runs the full pipeline (detect -> extract -> segment ->
 aggregate) and returns a self-contained :class:`AnalysisResult`.
@@ -22,7 +22,7 @@ import numpy as np
 from .detection import detect_spots
 from .loading import load_stack
 from .states import analyze_traces
-from .stats import aggregate
+from .stats import aggregate, combine
 from .traces import extract_traces
 
 if TYPE_CHECKING:
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from .loading import Stack
     from .params import AnalysisParams
     from .states import TraceResult
-    from .stats import AggregateStats
+    from .stats import AggregateStats, CombinedStats
     from .traces import TraceSet
 
 _DEFAULT_TIFF_PATTERNS = ("*.tif", "*.tiff", "*.TIF", "*.TIFF")
@@ -68,10 +68,10 @@ _EMITTER_COLUMNS = (
 
 @dataclass(frozen=True, slots=True)
 class AnalysisResult:
-    """Everything produced by analysing one stack.
+    """Everything produced by analyzing one stack.
 
     Attributes:
-        stack_name: Identifier of the analysed stack.
+        stack_name: Identifier of the analyzed stack.
         params: Parameters the analysis was run with.
         spots: Detected emitter locations and the detection image.
         traces: Extracted background-subtracted traces.
@@ -116,7 +116,7 @@ def analyze_stack(stack: Stack, params: AnalysisParams) -> AnalysisResult:
 
 
 def analyze_file(path: str | Path, params: AnalysisParams) -> AnalysisResult:
-    """Load a TIFF stack from disk and analyse it.
+    """Load a TIFF stack from disk and analyze it.
 
     Args:
         path: Path to a multi-page TIFF stack.
@@ -262,7 +262,7 @@ def analyze_directory(
     figures: bool = True,
     on_result: Callable[[Path, AnalysisResult], None] | None = None,
 ) -> list[AnalysisResult]:
-    """Analyse every TIFF stack in a directory and write per-stack outputs.
+    """Analyze every TIFF stack in a directory and write per-stack outputs.
 
     Stacks are selected by :func:`find_stacks` (``*.tif`` / ``*.tiff``). Each
     stack's outputs land in ``output_dir/<stack name>/``; a combined
@@ -278,7 +278,7 @@ def analyze_directory(
             each stack, e.g. to print progress.
 
     Returns:
-        One :class:`AnalysisResult` per analysed stack, in filename order.
+        One :class:`AnalysisResult` per analyzed stack, in filename order.
     """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -291,3 +291,35 @@ def analyze_directory(
             on_result(path, result)
     _write_batch_summary(results, out / "batch_summary.csv")
     return results
+
+
+def combine_results(results: list[AnalysisResult], params: AnalysisParams) -> CombinedStats:
+    """Pool the key metrics of several analyzed stacks into one summary.
+
+    Args:
+        results: Completed analyzes, e.g. the return value of
+            :func:`analyze_directory`.
+        params: Analysis parameters (supplies the power-law cutoff).
+
+    Returns:
+        The combined statistics across every stack.
+    """
+    return combine([result.trace_results for result in results], params)
+
+
+def save_combined_summary(combined: CombinedStats, output_dir: str | Path) -> Path:
+    """Write the combined-across-stacks statistics as JSON.
+
+    Args:
+        combined: The pooled statistics from :func:`combine_results`.
+        output_dir: Directory to write ``combined_summary.json`` into.
+
+    Returns:
+        The path written.
+    """
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "combined_summary.json"
+    with path.open("w") as handle:
+        json.dump(asdict(combined), handle, indent=2)
+    return path
