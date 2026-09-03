@@ -1,21 +1,26 @@
 # wo-blinker
 
-Systematic blinking-statistics analysis of TIFF time-series stacks.
+Simple blinking-statistics analysis of TIFF time-series stacks.
 
-Given a multi-page TIFF (pages = frames) of blinking emitters — single molecules,
-quantum dots, defect centers, microLED sites — `blinker` automatically finds the
-emitters, extracts a background-subtracted intensity trace for each, segments
-every trace into ON/OFF states, and reports the blinking statistics:
+Given a multi-page TIFF (pages = frames) of emitters — single molecules, quantum
+dots, defect / charge-trap sites, microLED pixels — `blinker` finds the
+emitters, extracts a box-summed intensity trace for each, splits every trace
+into ON/OFF states, classifies each emitter, and reports the blinking
+statistics **per individual emitter** and for **the whole population**:
 
-- **ON / OFF dwell times** — per emitter and pooled, with power-law and
-  exponential fits of the distributions.
-- **Intensity amplitudes** — the ON−OFF step of each emitter.
-- **Duty cycle** — fraction of time each emitter spends ON.
-- **Switching activity** — number of transitions per emitter.
-- **Photo-activation transient** — a stretched-exponential fit of the field-wide
-  mean intensity versus time.
+- **Per emitter** (`emitters.csv`): position, ON/OFF levels, relative
+  fluctuation `cv`, ON/OFF contrast and separation, duty cycle, transition
+  count, mean ON/OFF dwell, and a class — `static`, `stepper` (one-off switch)
+  or `stochastic` (a genuine blinker).
+- **Population** (`summary.json`): how many emitters are static / steppers /
+  stochastic blinkers, and the pooled ON/OFF dwell-time distributions with
+  power-law and exponential fits, plus the contrast / duty-cycle / `cv`
+  distributions.
 
-## Pipeline
+Large files are **streamed** frame-by-frame, so a multi-GB uint8 movie is
+analyzed in a few hundred MB of RAM.
+
+## Method
 
 ```
 TIFF stack ──► detect spots ──► extract traces ──► two-state ──► aggregate stats
@@ -24,14 +29,19 @@ TIFF stack ──► detect spots ──► extract traces ──► two-state �
 
 | stage | module | what it does |
 | --- | --- | --- |
-| load | [loading.py](blinker/loading.py) | read a TIFF into a normalized `(T, H, W)` float32 `Stack` |
-| detect | [detection.py](blinker/detection.py) | local-maxima peak finding on a temporal projection (default: per-pixel std) |
-| extract | [traces.py](blinker/traces.py) | sum a circular aperture per emitter, subtract a per-frame background annulus |
-| segment | [states.py](blinker/states.py) | 1-D two-state clustering (GMM / k-means / Otsu) → threshold → ON/OFF dwell runs |
-| aggregate | [stats.py](blinker/stats.py) | pool dwell times, fit distributions, summarize amplitudes / duty cycle / transient |
+| load | [loading.py](blinker/loading.py) | stream a TIFF as `(T, H, W)` float32 chunks (`open_stack`), or load it fully (`load_stack`) |
+| detect | [detection.py](blinker/detection.py) | local maxima of a temporal projection (default: the time **mean**) |
+| extract | [traces.py](blinker/traces.py) | sum a small square box (default 5×5) around each emitter, per frame |
+| segment | [states.py](blinker/states.py) | Otsu threshold → ON/OFF, median-filter debounce, then classify each trace |
+| aggregate | [stats.py](blinker/stats.py) | pool dwell times, fit power-law / exponential, summarize the population |
 | orchestrate | [pipeline.py](blinker/pipeline.py) | run all stages and write CSV / JSON / PNG outputs |
 
-Analysis parameters live in a single immutable [`AnalysisParams`](blinker/params.py).
+An emitter is called a **stochastic blinker** when its two levels are genuinely
+separated (`sep >= sep_threshold` *and* `contrast >= contrast_threshold`) and it
+switches often enough (`n_transitions >= min_transitions`); a clearly two-state
+trace that switches only once or twice is a **stepper**; everything else is
+**static**. All parameters live in one immutable
+[`AnalysisParams`](blinker/params.py).
 
 ## Install
 
@@ -42,95 +52,85 @@ uv sync
 ## Run script (edit constants, then run)
 
 There is no command-line parser. [run_blinker.py](run_blinker.py) has a `CONFIG`
-block at the top with the input/output directories and every analysis parameter
-as a plainly visible constant — edit them and run:
+block at the top with the input/output paths and every analysis parameter as a
+plainly visible constant — edit them and run:
 
 ```bash
 uv run python run_blinker.py
 ```
 
-It analyzes every `*.tif` / `*.tiff` in `INPUT_DIR` with the same parameters. The
-constants map one-to-one onto [`AnalysisParams`](blinker/params.py):
+`INPUT` may be a single `.tif`/`.tiff` **file** or a **folder** of them. The
+constants map one-to-one onto [`AnalysisParams`](blinker/params.py); the
+defaults reproduce the reference analysis (mean-projection detection, a 5×5 box,
+Otsu + a 5-frame debounce):
 
 ```python
-INPUT_DIR  = Path("data")
+INPUT = Path("movie.tiff")  # a file, or a folder of stacks
 OUTPUT_DIR = Path("blinker_out")
-FRAME_INTERVAL_S = 0.05        # seconds per frame (use 1/fps)
-PROJECTION = "std"             # "std" | "max" | "mean" | "cv"
-DETECTION_PERCENTILE = 99.0    # keep peaks above this percentile of the projection
-ROI_RADIUS = 3                 # aperture radius (px); BACKGROUND_INNER/OUTER = annulus
-STATE_METHOD = "gmm"           # "gmm" | "kmeans" | "otsu"
-MIN_SNR = 3.0                  # amplitude/noise a trace must exceed to be a blinker
-# ... (see the file for the full list)
+FRAME_INTERVAL_S = 1.0  # seconds per frame (1.0 => dwell times in frames)
+PROJECTION = "mean"  # "mean" | "std" | "max" | "cv"
+DETECTION_PERCENTILE = 60.0  # keep local maxima above this percentile of the projection
+MIN_SEPARATION = 6  # min pixels between two emitters
+ROI_RADIUS = 2  # box half-width (2 => 5×5)
+DEBOUNCE_FRAMES = 5  # median-filter window (1 = off)
+SEP_THRESHOLD = 2.0  # min level separation (sigma) to be two-state
+CONTRAST_THRESHOLD = 0.1  # min contrast to be two-state
+MIN_TRANSITIONS = 4  # min switches to be a stochastic blinker
 ```
 
-Outputs, written under `OUTPUT_DIR`:
+> Sparse emitters that are dark most of the time detect better with
+> `PROJECTION = "std"` and a higher `DETECTION_PERCENTILE` (e.g. 99). The `mean`
+> default suits dense, always-present sites (e.g. an emitter lattice).
 
-- `<stack name>/emitters.csv` — one row per emitter (position, levels, amplitude,
-  SNR, transitions, duty cycle, mean ON/OFF times, blinker flag).
-- `<stack name>/on_dwell_times.csv`, `off_dwell_times.csv` — pooled dwell times (s).
-- `<stack name>/summary.json` — aggregate statistics and the parameters used.
-- `<stack name>/overview.png`, `statistics.png` — diagnostic figures.
-- `batch_summary.csv` — **one row per stack** (blinker counts, dwell medians,
-  amplitude, transient τ).
-- `combined_summary.json` — **all stacks pooled together**: total spots/blinkers,
-  and pooled ON/OFF dwell, amplitude and duty-cycle statistics with their fits.
+Outputs, written under `OUTPUT_DIR/<stack name>/`:
+
+- `emitters.csv` — one row per emitter (the individual-emitter statistics).
+- `summary.json` — the population statistics and the parameters used.
+- `on_dwell_times.csv`, `off_dwell_times.csv` — pooled dwell times (blinkers only).
+- `overview.png` — detection image with emitters marked by class, the strongest
+  blinker traces, and the fluctuation / switching-activity histograms.
+- `statistics.png` — pooled ON/OFF dwell distributions and their survival curves
+  with the exponential and power-law fits (where heavy-tailed kinetics show up).
+
+For a folder, two roll-ups are also written at the top of `OUTPUT_DIR`:
+`batch_summary.csv` (one row per stack) and `combined_summary.json` (all stacks
+pooled).
 
 ## Python API
 
 ```python
 from blinker import AnalysisParams, analyze_file, save_results
 
-params = AnalysisParams(frame_interval_s=0.05, state_method="gmm", min_snr=3.0)
-result = analyze_file("stack.tif", params)
+params = AnalysisParams(frame_interval_s=1.0)  # defaults reproduce the reference analysis
+result = analyze_file("stack.tiff", params)  # streamed from disk
 
 print(result.stats.n_blinkers, "blinkers of", result.stats.n_spots, "spots")
-print("ON dwell median:", result.stats.on.summary.median, "s")
+print("ON dwell median:", result.stats.on.summary.median)
 if result.stats.on.power_law:
     print("ON power-law exponent:", result.stats.on.power_law.alpha)
 
 save_results(result, "results")
 ```
 
-Analyze a whole folder in one call (this is what the run script uses):
+Work with individual stages directly for finer control:
 
 ```python
-from blinker import AnalysisParams, analyze_directory
+from blinker import open_stack, detect_spots, extract_traces, analyze_traces, aggregate
 
-analyze_directory("data", "blinker_out", AnalysisParams(frame_interval_s=0.05))
+source = open_stack("stack.tiff", frame_interval_s=1.0)  # streaming source
+spots = detect_spots(source, params)
+traces = extract_traces(source, spots, params)
+emitters = analyze_traces(traces, params)  # per-emitter EmitterResult list
+stats = aggregate(emitters, params)  # population AggregateStats
 ```
 
-Work with individual stages directly when you need finer control:
-
-```python
-from blinker import load_stack, detect_spots, extract_traces, analyze_traces
-
-stack = load_stack("stack.tif", frame_interval_s=0.05)
-spots = detect_spots(stack, params)
-traces = extract_traces(stack, spots, params)
-results = analyze_traces(traces, params)  # per-emitter TraceResult list
-```
-
-## Examples
+## Example (no data required)
 
 `blinker.synthetic` generates a ground-truth stack of telegraph-blinking Gaussian
-emitters (optionally with a photo-activation transient). The demo writes a
-synthetic TIFF and runs the full analysis on it (no data required):
+emitters. The demo writes a synthetic TIFF and runs the full analysis on it:
 
 ```bash
 uv run python examples/analyze_synthetic.py
-```
-
-[examples/power_series.py](examples/power_series.py) compares the **same emitters
-across a power series**: point it at a folder of same-FOV stacks acquired at
-increasing power (power read from the filename, e.g. `5%_...`, `10%_...`). It
-detects emitters once on a combined projection, reads those identical ROIs in
-every stack, and tracks ON/OFF dwell times, duty cycle and blink rate vs power
-(`power_series.csv`, `power_trends.csv`, `power_trends.png`). It uses only the
-public API and does not change the package.
-
-```bash
-uv run python examples/power_series.py
 ```
 
 ## Development
@@ -147,5 +147,7 @@ uv run pydoctor            # API docs -> site/
 
 - The reported ON/OFF dwell times **exclude the first and last run** of each
   trace, which are censored (the true switch happened outside the record).
+- With `FRAME_INTERVAL_S = 1.0` dwell times are reported in **frames**; set it to
+  `1/fps` to report them in seconds.
 - `reference/avi_microled_reference.py` preserves the original streaming-AVI
   microLED script this package generalized from; it is not part of the package.

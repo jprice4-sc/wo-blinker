@@ -1,11 +1,11 @@
-"""Tests for two-state segmentation and dwell-time extraction."""
+"""Tests for two-state segmentation, debouncing and classification."""
 
 from __future__ import annotations
 
 import numpy as np
 
 from blinker.params import AnalysisParams
-from blinker.states import analyze_trace, dwell_times_from_state, segment_two_state
+from blinker.states import analyze_trace, dwell_times_from_state, segment
 
 
 def test_dwell_times_drops_censored_edges() -> None:
@@ -24,27 +24,39 @@ def test_dwell_times_multiple_runs() -> None:
     assert sorted(off.tolist()) == [0.5, 1.0]
 
 
-def test_segment_two_state_recovers_levels() -> None:
+def test_segment_recovers_levels_and_separation() -> None:
     rng = np.random.default_rng(0)
     state = np.repeat([0, 1, 0, 1, 0, 1], 40).astype(bool)
     trace = np.where(state, 100.0, 10.0) + rng.normal(0, 2.0, state.size)
-    fit = segment_two_state(trace, "gmm")
-    assert fit.low_level < fit.threshold < fit.high_level
+    fit = segment(trace)
+    assert fit.off_level < fit.threshold < fit.on_level
     assert fit.amplitude > 80.0
-    assert fit.snr > 10.0
+    assert fit.contrast > 0.5
+    assert fit.sep > 10.0
 
 
-def test_flat_trace_is_not_a_blinker() -> None:
+def test_flat_trace_is_static_not_blinker() -> None:
     rng = np.random.default_rng(1)
     trace = 50.0 + rng.normal(0, 3.0, 400)
-    result = analyze_trace(trace, index=0, params=AnalysisParams(min_snr=3.0))
+    result = analyze_trace(trace, index=0, row=0, col=0, params=AnalysisParams())
+    assert result.category == "static"
     assert not result.is_blinker
 
 
-def test_min_dwell_merges_single_frame_flips() -> None:
+def test_clean_telegraph_is_stochastic() -> None:
+    rng = np.random.default_rng(2)
+    state = np.tile(np.repeat([0, 1], 25), 8).astype(bool)  # 16 clean switches
+    trace = np.where(state, 500.0, 100.0) + rng.normal(0, 5.0, state.size)
+    result = analyze_trace(trace, 0, 0, 0, AnalysisParams(min_transitions=4))
+    assert result.category == "stochastic"
+    assert result.is_blinker
+    assert result.n_transitions >= 4
+
+
+def test_debounce_merges_single_frame_flips() -> None:
     clean = np.repeat([0, 1, 0, 1], 30).astype(bool)
     trace = np.where(clean, 100.0, 0.0)
     trace[15] = 100.0  # a lone one-frame spike in an OFF run
-    baseline = analyze_trace(trace, 0, AnalysisParams(min_dwell_frames=1, min_snr=1.0))
-    merged = analyze_trace(trace, 0, AnalysisParams(min_dwell_frames=3, min_snr=1.0))
+    baseline = analyze_trace(trace, 0, 0, 0, AnalysisParams(debounce_frames=1))
+    merged = analyze_trace(trace, 0, 0, 0, AnalysisParams(debounce_frames=5))
     assert merged.n_transitions < baseline.n_transitions

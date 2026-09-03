@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 import tifffile
 
-from blinker.params import AnalysisParams
 from blinker.pipeline import (
     analyze_directory,
     analyze_stack,
@@ -21,6 +20,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from blinker.loading import Stack
+    from blinker.params import AnalysisParams
     from blinker.synthetic import SimulatedStack
 
 
@@ -28,39 +28,49 @@ def _true_transitions(states: np.ndarray) -> list[int]:
     return [int((np.diff(states[e].astype(int)) != 0).sum()) for e in range(states.shape[0])]
 
 
-def test_end_to_end_recovers_ground_truth(sim_stack: Stack, sim: SimulatedStack) -> None:
-    result = analyze_stack(sim_stack, AnalysisParams(frame_interval_s=sim.frame_interval_s, min_snr=3.0))
+def test_end_to_end_recovers_ground_truth(
+    sim_stack: Stack,
+    sim: SimulatedStack,
+    sim_params: AnalysisParams,
+) -> None:
+    result = analyze_stack(sim_stack, sim_params)
     assert result.stats.n_spots == sim.positions.shape[0]
     assert result.stats.n_blinkers == sim.positions.shape[0]
 
+    # Box-summed traces thresholded by Otsu recover transition counts
+    # approximately (noise near the threshold adds a few crossings), so check
+    # each emitter is in the right ballpark rather than exact.
     true_trans = _true_transitions(sim.states)
-    for r in result.trace_results:
-        row, col = result.traces.coords[r.index]
-        emitter = int(np.argmin(((sim.positions - [row, col]) ** 2).sum(axis=1)))
-        assert r.n_transitions == true_trans[emitter]
+    for r in result.emitters:
+        emitter = int(np.argmin(((sim.positions - [r.row, r.col]) ** 2).sum(axis=1)))
+        assert abs(r.n_transitions - true_trans[emitter]) <= 0.3 * true_trans[emitter] + 3
 
     # Recovered dwell statistics should respect the simulated ON < OFF ordering.
     assert result.stats.on.summary.median < result.stats.off.summary.median
     assert result.stats.on.summary.median > 0
 
 
-def test_dwell_medians_in_ballpark(sim_stack: Stack, sim: SimulatedStack) -> None:
-    result = analyze_stack(sim_stack, AnalysisParams(frame_interval_s=sim.frame_interval_s))
+def test_dwell_medians_in_ballpark(sim_stack: Stack, sim: SimulatedStack, sim_params: AnalysisParams) -> None:
+    result = analyze_stack(sim_stack, sim_params)
     dt = sim.frame_interval_s
-    # Geometric dwell medians for the simulated rates, in seconds.
     on_median_true = np.log(0.5) / np.log(1 - 1 / sim.params.mean_on_frames) * dt
     off_median_true = np.log(0.5) / np.log(1 - 1 / sim.params.mean_off_frames) * dt
     assert 0.4 * on_median_true < result.stats.on.summary.median < 2.5 * on_median_true
     assert 0.4 * off_median_true < result.stats.off.summary.median < 2.5 * off_median_true
 
 
-def test_save_results_writes_expected_files(sim_stack: Stack, tmp_path: Path) -> None:
-    result = analyze_stack(sim_stack, AnalysisParams())
+def test_save_results_writes_expected_files(sim_stack: Stack, sim_params: AnalysisParams, tmp_path: Path) -> None:
+    result = analyze_stack(sim_stack, sim_params)
     written = save_results(result, tmp_path, figures=True)
     names = {p.name for p in written}
     assert {"emitters.csv", "on_dwell_times.csv", "off_dwell_times.csv", "summary.json"} <= names
     assert (tmp_path / "overview.png").is_file()
     assert (tmp_path / "statistics.png").is_file()
+
+    header = (tmp_path / "emitters.csv").read_text().splitlines()[0]
+    assert header.split(",")[:3] == ["index", "row", "col"]
+    assert "category" in header
+
     summary = json.loads((tmp_path / "summary.json").read_text())
     assert isinstance(summary, dict)
     stats = summary["stats"]
@@ -68,10 +78,10 @@ def test_save_results_writes_expected_files(sim_stack: Stack, tmp_path: Path) ->
     assert isinstance(stats, dict)
     assert isinstance(params, dict)
     assert stats["n_spots"] == result.stats.n_spots
-    assert params["state_method"] == "gmm"
+    assert params["projection"] == "std"
 
 
-def test_analyze_directory_batch(sim: SimulatedStack, tmp_path: Path) -> None:
+def test_analyze_directory_batch(sim: SimulatedStack, sim_params: AnalysisParams, tmp_path: Path) -> None:
     input_dir = tmp_path / "in"
     output_dir = tmp_path / "out"
     input_dir.mkdir()
@@ -82,7 +92,7 @@ def test_analyze_directory_batch(sim: SimulatedStack, tmp_path: Path) -> None:
     results = analyze_directory(
         input_dir,
         output_dir,
-        AnalysisParams(frame_interval_s=sim.frame_interval_s),
+        sim_params,
         figures=False,
         on_result=lambda path, _result: seen.append(path.name),
     )
@@ -98,16 +108,15 @@ def test_analyze_directory_batch(sim: SimulatedStack, tmp_path: Path) -> None:
     assert len(summary_lines) == 3  # header + one row per stack
 
 
-def test_analyze_directory_empty(tmp_path: Path) -> None:
-    results = analyze_directory(tmp_path, tmp_path / "out", AnalysisParams())
+def test_analyze_directory_empty(tmp_path: Path, sim_params: AnalysisParams) -> None:
+    results = analyze_directory(tmp_path, tmp_path / "out", sim_params)
     assert results == []
     assert (tmp_path / "out" / "batch_summary.csv").is_file()
 
 
-def test_combine_results_pools_across_stacks(sim_stack: Stack, tmp_path: Path) -> None:
-    params = AnalysisParams(frame_interval_s=0.05)
-    results = [analyze_stack(sim_stack, params), analyze_stack(sim_stack, params)]
-    combined = combine_results(results, params)
+def test_combine_results_pools_across_stacks(sim_stack: Stack, sim_params: AnalysisParams, tmp_path: Path) -> None:
+    results = [analyze_stack(sim_stack, sim_params), analyze_stack(sim_stack, sim_params)]
+    combined = combine_results(results, sim_params)
 
     assert combined.n_stacks == 2
     assert combined.n_spots == sum(r.stats.n_spots for r in results)

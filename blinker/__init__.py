@@ -2,20 +2,21 @@
 
 The public API mirrors the pipeline stages:
 
-* :func:`load_stack` -- read a TIFF stack.
-* :func:`detect_spots` -- auto-detect emitters.
-* :func:`extract_traces` -- pull per-emitter intensity traces.
-* :func:`analyze_traces` -- two-state ON/OFF segmentation.
+* :func:`load_stack` / :func:`open_stack` -- read a TIFF stack (in memory, or
+  streamed for large files).
+* :func:`detect_spots` -- auto-detect emitters on a temporal projection.
+* :func:`extract_traces` -- pull per-emitter box-summed intensity traces.
+* :func:`analyze_traces` -- Otsu two-state segmentation and classification.
 * :func:`aggregate` -- pool population-level statistics.
 
-For a one-call analysis use :func:`analyze_file` (or :func:`analyze_stack` for
-in-memory data) followed by :func:`save_results`.
+For a one-call analysis use :func:`analyze_file` (streams from disk) or
+:func:`analyze_stack` (in-memory) followed by :func:`save_results`.
 """
 
 from __future__ import annotations
 
 from .detection import Spots, detect_spots, project
-from .loading import Stack, load_stack, stack_from_array
+from .loading import FrameSource, Stack, TiffStack, load_stack, open_stack, stack_from_array
 from .params import AnalysisParams
 from .pipeline import (
     AnalysisResult,
@@ -27,11 +28,18 @@ from .pipeline import (
     save_combined_summary,
     save_results,
 )
-from .states import StateFit, TraceResult, analyze_trace, analyze_traces, segment_two_state
-from .stats import AggregateStats, CombinedStats, DwellStats, aggregate
+from .states import (
+    EmitterResult,
+    StateFit,
+    analyze_trace,
+    analyze_traces,
+    dwell_times_from_state,
+    segment,
+)
+from .stats import AggregateStats, CombinedStats, DwellStats, ExponentialFit, PowerLawFit, Summary, aggregate
 from .traces import TraceSet, extract_traces
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "AggregateStats",
@@ -39,10 +47,15 @@ __all__ = [
     "AnalysisResult",
     "CombinedStats",
     "DwellStats",
+    "EmitterResult",
+    "ExponentialFit",
+    "FrameSource",
+    "PowerLawFit",
     "Spots",
     "Stack",
     "StateFit",
-    "TraceResult",
+    "Summary",
+    "TiffStack",
     "TraceSet",
     "aggregate",
     "analyze_directory",
@@ -52,12 +65,14 @@ __all__ = [
     "analyze_traces",
     "combine_results",
     "detect_spots",
+    "dwell_times_from_state",
     "extract_traces",
     "find_stacks",
     "load_stack",
+    "open_stack",
     "project",
     "save_combined_summary",
     "save_results",
-    "segment_two_state",
+    "segment",
     "stack_from_array",
 ]

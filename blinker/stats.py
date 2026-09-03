@@ -1,33 +1,27 @@
 """Aggregate blinking statistics pooled across all emitters in a stack.
 
-Given the per-trace results this module builds the population-level summary an
-experimentalist actually reports: pooled ON/OFF dwell-time distributions with
-power-law and exponential fits, the emitter amplitude and duty-cycle
-distributions, the fraction of detected spots that blink, and a stretched-
-exponential fit of the field-wide photo-activation transient.
+Given the per-emitter results this module builds the population-level summary:
+how many emitters are static / one-off steppers / stochastic blinkers, the
+pooled ON/OFF dwell-time distributions (with power-law and exponential fits),
+and the distributions of the emitter contrast, separation, duty cycle and
+amplitude. Only stochastic blinkers contribute to the dwell-time and blinker
+distributions; the coefficient-of-variation summary is over every detected spot.
 """
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
-from scipy import optimize
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
     from .params import AnalysisParams
-    from .states import TraceResult
-    from .traces import TraceSet
+    from .states import EmitterResult
 
 _MIN_FIT_SAMPLES = 5
-_MIN_TRANSIENT_FRAMES = 10
-_TRANSIENT_SNR = 3.0
-_BETA_LOW = 0.05
-_BETA_HIGH = 2.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,45 +93,36 @@ class DwellStats:
 
 
 @dataclass(frozen=True, slots=True)
-class StretchedExpFit:
-    """Stretched-exponential transient ``I(t) = I_inf - dI * exp(-(t/tau)**beta)``.
-
-    Attributes:
-        i_inf: Steady-state intensity.
-        d_i: Amplitude of the transient.
-        tau: Characteristic time in seconds.
-        beta: Stretching exponent.
-    """
-
-    i_inf: float
-    d_i: float
-    tau: float
-    beta: float
-
-
-@dataclass(frozen=True, slots=True)
 class AggregateStats:
     """Population-level blinking statistics for one stack.
 
     Attributes:
         n_spots: Number of detected emitters.
-        n_blinkers: Number classified as genuine blinkers.
+        n_static: Emitters classed as flat/static.
+        n_stepper: Emitters with a clear but one-off (non-stochastic) switch.
+        n_blinkers: Emitters classed as genuine stochastic blinkers.
         blink_fraction: ``n_blinkers / n_spots``.
-        on: Pooled ON dwell-time statistics.
-        off: Pooled OFF dwell-time statistics.
-        amplitude: Distribution of blinker ON/OFF amplitudes.
-        duty_cycle: Distribution of blinker duty cycles.
-        transient: Field-wide photo-activation transient fit, or ``None``.
+        on: Pooled ON dwell-time statistics (blinkers only).
+        off: Pooled OFF dwell-time statistics (blinkers only).
+        amplitude: Distribution of blinker ON-OFF amplitudes.
+        contrast: Distribution of blinker Michelson contrasts.
+        separation: Distribution of blinker state separations (sigma).
+        duty_cycle: Distribution of blinker ON fractions.
+        cv: Distribution of relative fluctuation over every detected spot.
     """
 
     n_spots: int
+    n_static: int
+    n_stepper: int
     n_blinkers: int
     blink_fraction: float
     on: DwellStats
     off: DwellStats
     amplitude: Summary
+    contrast: Summary
+    separation: Summary
     duty_cycle: Summary
-    transient: StretchedExpFit | None
+    cv: Summary
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,12 +132,13 @@ class CombinedStats:
     Attributes:
         n_stacks: Number of stacks combined.
         n_spots: Total detected emitters across all stacks.
-        n_blinkers: Total genuine blinkers across all stacks.
+        n_blinkers: Total stochastic blinkers across all stacks.
         blink_fraction: ``n_blinkers / n_spots`` over the whole set.
         on: ON dwell-time statistics pooled across every blinker.
         off: OFF dwell-time statistics pooled across every blinker.
-        amplitude: Distribution of blinker ON/OFF amplitudes, all stacks.
-        duty_cycle: Distribution of blinker duty cycles, all stacks.
+        amplitude: Distribution of blinker ON-OFF amplitudes, all stacks.
+        contrast: Distribution of blinker contrasts, all stacks.
+        duty_cycle: Distribution of blinker ON fractions, all stacks.
     """
 
     n_stacks: int
@@ -162,6 +148,7 @@ class CombinedStats:
     on: DwellStats
     off: DwellStats
     amplitude: Summary
+    contrast: Summary
     duty_cycle: Summary
 
 
@@ -200,6 +187,8 @@ def fit_power_law(times: NDArray[np.float64], xmin: float | None = None) -> Powe
     """
     times = np.asarray(times, dtype=np.float64)
     times = times[times > 0]
+    if times.size == 0:
+        return None
     cutoff = float(times.min()) if xmin is None else float(xmin)
     sample = times[times >= cutoff]
     if sample.size < _MIN_FIT_SAMPLES or cutoff <= 0:
@@ -236,102 +225,55 @@ def _dwell_stats(times: NDArray[np.float64], xmin: float | None) -> DwellStats:
     )
 
 
-def fit_transient(global_trace: NDArray[np.float64], frame_interval_s: float) -> StretchedExpFit | None:
-    """Fit a stretched-exponential to the field-wide mean-intensity transient.
+def _pool_dwells(blinkers: list[EmitterResult]) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Concatenate ON and OFF dwell times across a list of blinkers."""
+    on = np.concatenate([r.on_times for r in blinkers]) if blinkers else np.empty(0)
+    off = np.concatenate([r.off_times for r in blinkers]) if blinkers else np.empty(0)
+    return on, off
+
+
+def aggregate(results: list[EmitterResult], params: AnalysisParams) -> AggregateStats:
+    """Pool per-emitter results into population-level blinking statistics.
 
     Args:
-        global_trace: Mean frame intensity versus frame index.
-        frame_interval_s: Seconds per frame.
-
-    Returns:
-        The :class:`StretchedExpFit`, or ``None`` if the fit does not converge.
-    """
-    y = np.asarray(global_trace, dtype=np.float64)
-    if y.size < _MIN_TRANSIENT_FRAMES:
-        return None
-    t = np.arange(y.size, dtype=np.float64) * frame_interval_s
-
-    # A stretched-exponential transient only exists if the mean genuinely drifts.
-    # Compare the net change across the record to the frame-to-frame noise; if the
-    # trace is essentially flat there is nothing to fit.
-    edge = max(y.size // 10, 1)
-    drift = abs(float(y[-edge:].mean() - y[:edge].mean()))
-    noise = max(float(np.std(np.diff(y))) / np.sqrt(2.0), 1e-12)
-    if drift < _TRANSIENT_SNR * noise:
-        return None
-
-    def model(t: NDArray[np.float64], i_inf: float, d_i: float, tau: float, beta: float) -> NDArray[np.float64]:
-        return i_inf - d_i * np.exp(-((t / tau) ** beta))
-
-    p0 = [float(y[-1]), float(y[-1] - y[0]), max(float(t[-1]) / 4.0, 1e-6), 0.7]
-    bounds = ([-np.inf, -np.inf, 1e-9, _BETA_LOW], [np.inf, np.inf, np.inf, _BETA_HIGH])
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            warnings.simplefilter("error", optimize.OptimizeWarning)
-            popt, _ = optimize.curve_fit(model, t, y, p0=p0, bounds=bounds, maxfev=20000)
-    except (RuntimeError, ValueError, optimize.OptimizeWarning):
-        return None
-    return StretchedExpFit(i_inf=float(popt[0]), d_i=float(popt[1]), tau=float(popt[2]), beta=float(popt[3]))
-
-
-def aggregate(
-    results: list[TraceResult],
-    traceset: TraceSet,
-    global_trace: NDArray[np.float64],
-    params: AnalysisParams,
-) -> AggregateStats:
-    """Pool per-trace results into population-level blinking statistics.
-
-    Args:
-        results: Per-trace analysis results.
-        traceset: The trace set the results came from (unused fields reserved
-            for future spatial statistics).
-        global_trace: Mean frame intensity versus frame index, for the transient
-            fit.
+        results: Per-emitter analysis results.
         params: Analysis parameters (supplies the power-law cutoff).
 
     Returns:
         The :class:`AggregateStats`.
     """
-    del traceset  # reserved for spatial-clustering statistics
-    blinkers = [r for r in results if r.is_blinker]
-    on = np.concatenate([r.on_times for r in blinkers]) if blinkers else np.empty(0)
-    off = np.concatenate([r.off_times for r in blinkers]) if blinkers else np.empty(0)
-    amplitudes = np.array([r.fit.amplitude for r in blinkers], dtype=np.float64)
-    duty = np.array([r.duty_cycle for r in blinkers], dtype=np.float64)
+    blinkers = [r for r in results if r.category == "stochastic"]
+    on, off = _pool_dwells(blinkers)
     n_spots = len(results)
     return AggregateStats(
         n_spots=n_spots,
+        n_static=sum(r.category == "static" for r in results),
+        n_stepper=sum(r.category == "stepper" for r in results),
         n_blinkers=len(blinkers),
         blink_fraction=len(blinkers) / n_spots if n_spots else 0.0,
         on=_dwell_stats(on, params.power_law_xmin_s),
         off=_dwell_stats(off, params.power_law_xmin_s),
-        amplitude=summarize(amplitudes),
-        duty_cycle=summarize(duty),
-        transient=fit_transient(global_trace, params.frame_interval_s),
+        amplitude=summarize(np.array([r.fit.amplitude for r in blinkers], dtype=np.float64)),
+        contrast=summarize(np.array([r.fit.contrast for r in blinkers], dtype=np.float64)),
+        separation=summarize(np.array([r.fit.sep for r in blinkers], dtype=np.float64)),
+        duty_cycle=summarize(np.array([r.on_fraction for r in blinkers], dtype=np.float64)),
+        cv=summarize(np.array([r.cv for r in results], dtype=np.float64)),
     )
 
 
-def combine(per_stack_results: list[list[TraceResult]], params: AnalysisParams) -> CombinedStats:
-    """Pool per-trace results from many stacks into one combined summary.
-
-    Every blinker from every stack contributes to the pooled dwell-time,
-    amplitude and duty-cycle statistics.
+def combine(per_stack_results: list[list[EmitterResult]], params: AnalysisParams) -> CombinedStats:
+    """Pool per-emitter results from many stacks into one combined summary.
 
     Args:
-        per_stack_results: One list of per-trace results per stack.
+        per_stack_results: One list of per-emitter results per stack.
         params: Analysis parameters (supplies the power-law cutoff).
 
     Returns:
         The :class:`CombinedStats`.
     """
-    blinkers = [r for stack in per_stack_results for r in stack if r.is_blinker]
+    blinkers = [r for stack in per_stack_results for r in stack if r.category == "stochastic"]
     n_spots = sum(len(stack) for stack in per_stack_results)
-    on = np.concatenate([r.on_times for r in blinkers]) if blinkers else np.empty(0)
-    off = np.concatenate([r.off_times for r in blinkers]) if blinkers else np.empty(0)
-    amplitudes = np.array([r.fit.amplitude for r in blinkers], dtype=np.float64)
-    duty = np.array([r.duty_cycle for r in blinkers], dtype=np.float64)
+    on, off = _pool_dwells(blinkers)
     return CombinedStats(
         n_stacks=len(per_stack_results),
         n_spots=n_spots,
@@ -339,6 +281,7 @@ def combine(per_stack_results: list[list[TraceResult]], params: AnalysisParams) 
         blink_fraction=len(blinkers) / n_spots if n_spots else 0.0,
         on=_dwell_stats(on, params.power_law_xmin_s),
         off=_dwell_stats(off, params.power_law_xmin_s),
-        amplitude=summarize(amplitudes),
-        duty_cycle=summarize(duty),
+        amplitude=summarize(np.array([r.fit.amplitude for r in blinkers], dtype=np.float64)),
+        contrast=summarize(np.array([r.fit.contrast for r in blinkers], dtype=np.float64)),
+        duty_cycle=summarize(np.array([r.on_fraction for r in blinkers], dtype=np.float64)),
     )

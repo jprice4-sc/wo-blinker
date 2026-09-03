@@ -1,9 +1,11 @@
 """Automatic emitter detection from a temporal projection of the stack.
 
-Blinking emitters are the pixels whose intensity varies over time, so the
-default detection image is the per-pixel temporal standard deviation. Local
-maxima of that image are the candidate emitters; peaks too close to the frame
-edge (where the background annulus would fall off the image) are discarded.
+The stack is collapsed along time into a single 2-D image and emitters are the
+local maxima of that image. The default projection is the per-pixel time
+**mean**, which shows every persistent emitter (the reference data is a dense
+lattice of always-present sites that we then classify by how they fluctuate).
+The projection is accumulated by streaming the stack in chunks, so it works on
+files far larger than memory.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ from skimage.feature import peak_local_max
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from .loading import Stack
+    from .loading import FrameSource
     from .params import AnalysisParams, Projection
 
 
@@ -41,49 +43,60 @@ class Spots:
         return int(self.coords.shape[0])
 
 
-def project(stack: Stack, kind: Projection) -> NDArray[np.float64]:
+def project(source: FrameSource, kind: Projection) -> NDArray[np.float64]:
     """Collapse a stack along time into a single 2-D detection image.
 
     Args:
-        stack: The input time-series stack.
-        kind: Projection to compute (``"std"``, ``"max"``, ``"mean"`` or
-            ``"cv"`` for the coefficient of variation).
+        source: The input time-series source (in-memory or streamed).
+        kind: Projection to compute (``"mean"``, ``"std"``, ``"max"`` or ``"cv"``
+            for the coefficient of variation).
 
     Returns:
         A ``(height, width)`` float64 projection image.
     """
-    data = stack.data
-    if kind == "std":
-        return np.std(data, axis=0, dtype=np.float64)
+    h, w = source.height, source.width
+    n = source.n_frames
     if kind == "max":
-        return np.max(data, axis=0).astype(np.float64)
+        acc = np.full((h, w), -np.inf, dtype=np.float64)
+        for _start, block in source.iter_chunks():
+            np.maximum(acc, block.max(axis=0), out=acc)
+        return acc
+
+    s1 = np.zeros((h, w), dtype=np.float64)
+    s2 = np.zeros((h, w), dtype=np.float64) if kind in ("std", "cv") else None
+    for _start, block in source.iter_chunks():
+        s1 += block.sum(axis=0, dtype=np.float64)
+        if s2 is not None:
+            s2 += np.einsum("thw,thw->hw", block, block, dtype=np.float64)
+    mean = s1 / n
     if kind == "mean":
-        return np.mean(data, axis=0, dtype=np.float64)
-    # kind == "cv": coefficient of variation.
-    mean = np.mean(data, axis=0, dtype=np.float64)
-    std = np.std(data, axis=0, dtype=np.float64)
-    return std / (mean + 1.0)
+        return mean
+    variance = np.clip(s2 / n - mean * mean, 0, None)  # type: ignore[operator]
+    std = np.sqrt(variance)
+    if kind == "std":
+        return std
+    return std / (mean + 1.0)  # cv
 
 
-def detect_spots(stack: Stack, params: AnalysisParams) -> Spots:
+def detect_spots(source: FrameSource, params: AnalysisParams) -> Spots:
     """Locate candidate emitters as local maxima of a temporal projection.
 
     Args:
-        stack: The input time-series stack.
+        source: The input time-series source.
         params: Analysis parameters controlling projection, threshold, minimum
             spot separation and border exclusion.
 
     Returns:
         The detected :class:`Spots`, ordered brightest-first in the projection.
     """
-    projection = project(stack, params.projection)
+    projection = project(source, params.projection)
     threshold = float(np.percentile(projection, params.detection_percentile))
     num_peaks = params.max_spots if params.max_spots is not None else np.inf
     coords = peak_local_max(
         projection,
         min_distance=params.min_separation,
         threshold_abs=threshold,
-        exclude_border=params.background_outer,
+        exclude_border=params.roi_radius,
         num_peaks=num_peaks,
     )
     coords = np.asarray(coords, dtype=np.int64).reshape(-1, 2)
