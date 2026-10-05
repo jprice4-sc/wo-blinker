@@ -127,7 +127,8 @@ def _plot_dwell_hist(ax: Axes, on: NDArray[np.float64], off: NDArray[np.float64]
     ax.set_xlabel(f"dwell time ({unit})")
     ax.set_ylabel("count")
     ax.set_title("ON/OFF dwell-time distributions")
-    ax.legend(fontsize=8)
+    if ax.get_legend_handles_labels()[0]:
+        ax.legend(fontsize=8)
 
 
 def _plot_ccdf(ax: Axes, times: NDArray[np.float64], stats: DwellStats, label: str, color: str) -> None:
@@ -165,7 +166,8 @@ def make_stats_figure(result: AnalysisResult) -> Figure:
     ax[1].set_xlabel(f"dwell time ({unit})")
     ax[1].set_ylabel("P(T > t)")
     ax[1].set_title("Survival (dots) vs exponential (solid) / power-law (dashed)")
-    ax[1].legend(fontsize=8)
+    if ax[1].get_legend_handles_labels()[0]:
+        ax[1].legend(fontsize=8)
     fig.tight_layout()
     return fig
 
