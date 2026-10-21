@@ -5,7 +5,7 @@ results into one object with a fluent, stateful workflow::
 
     from blinker import Blinker, AnalysisParams
 
-    b = Blinker(AnalysisParams(frame_interval_s=0.05, min_snr=3.0))
+    b = Blinker(AnalysisParams(frame_interval_s=0.05, sep_threshold=3.0))
     b.load("stack.tif").analyze()
     print(b.summary())
     fig = b.plot_summary()
@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Self, override
 
 import numpy as np
 
-from .loading import load_stack, stack_from_array
+from .loading import open_stack, stack_from_array
 from .params import AnalysisParams
 from .pipeline import analyze_stack, save_results
 from .stats import format_summary
@@ -35,9 +35,9 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
     from .detection import Spots
-    from .loading import Stack
+    from .loading import FrameSource
     from .pipeline import AnalysisResult
-    from .states import TraceResult
+    from .states import EmitterResult
     from .stats import AggregateStats
     from .traces import TraceSet
 
@@ -59,11 +59,11 @@ class Blinker:
         Args:
             params: Base analysis parameters (defaults to :class:`AnalysisParams`).
             **overrides: Individual :class:`AnalysisParams` fields to override,
-                e.g. ``Blinker(frame_interval_s=0.05, min_snr=4)``.
+                e.g. ``Blinker(frame_interval_s=0.05, sep_threshold=4)``.
         """
         base = params if params is not None else AnalysisParams()
         self.params: AnalysisParams = replace(base, **overrides) if overrides else base  # type: ignore[arg-type]
-        self.stack: Stack | None = None
+        self.stack: FrameSource | None = None
         self.result: AnalysisResult | None = None
 
     @override
@@ -75,7 +75,10 @@ class Blinker:
 
     # -- loading -------------------------------------------------------
     def load(self, path: str | Path) -> Self:
-        """Load a TIFF stack from disk (clears any previous result).
+        """Open a TIFF stack from disk (clears any previous result).
+
+        Frames are streamed from the file during analysis rather than loaded
+        into memory, so stacks larger than RAM work.
 
         Args:
             path: Path to a multi-page TIFF stack.
@@ -83,7 +86,7 @@ class Blinker:
         Returns:
             ``self``, for chaining.
         """
-        self.stack = load_stack(path, self.params.frame_interval_s)
+        self.stack = open_stack(path, self.params.frame_interval_s)
         self.result = None
         return self
 
@@ -127,9 +130,9 @@ class Blinker:
 
     # -- results -------------------------------------------------------
     @property
-    def results(self) -> list[TraceResult]:
+    def results(self) -> list[EmitterResult]:
         """Per-emitter blinking results (analysis runs on first access)."""
-        return self._result().trace_results
+        return self._result().emitters
 
     @property
     def stats(self) -> AggregateStats:

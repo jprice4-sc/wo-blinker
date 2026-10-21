@@ -67,12 +67,12 @@ class AnalysisParams:
     # --- spot detection ---
     projection: Projection = "mean"
     detection_percentile: float = 60.0
-    min_separation: int = 6
+    min_separation: int = 2
     roi_radius: int = 2
     max_spots: int | None = None
 
     # --- two-state segmentation & classification ---
-    debounce_frames: int = 5
+    debounce_frames: int = 3
     sep_threshold: float = 2.0
     contrast_threshold: float = 0.1
     min_transitions: int = 4

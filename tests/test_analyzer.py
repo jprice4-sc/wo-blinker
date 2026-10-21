@@ -15,8 +15,8 @@ if TYPE_CHECKING:
     from blinker.synthetic import SimulatedStack
 
 
-def test_workflow_matches_functional_api(sim: SimulatedStack) -> None:
-    b = Blinker(frame_interval_s=sim.frame_interval_s, min_snr=3.0)
+def test_workflow_matches_functional_api(sim: SimulatedStack, sim_params: AnalysisParams) -> None:
+    b = Blinker(sim_params)
     b.load_array(sim.data, name="sim").analyze()
 
     assert b.n_spots == sim.positions.shape[0]
@@ -29,10 +29,10 @@ def test_workflow_matches_functional_api(sim: SimulatedStack) -> None:
 
 
 def test_overrides_reach_params() -> None:
-    b = Blinker(AnalysisParams(min_snr=1.0), frame_interval_s=0.02, state_method="otsu")
+    b = Blinker(AnalysisParams(sep_threshold=1.0), frame_interval_s=0.02, min_transitions=6)
     assert b.params.frame_interval_s == 0.02
-    assert b.params.state_method == "otsu"
-    assert b.params.min_snr == 1.0
+    assert b.params.min_transitions == 6
+    assert b.params.sep_threshold == 1.0
 
 
 def test_analysis_is_lazy_and_cached(sim: SimulatedStack) -> None:

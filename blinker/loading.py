@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
 MIN_FRAMES = 2
 _TIME_SERIES_NDIM = 3
+_RGB_SAMPLES = (3, 4)
 DEFAULT_CHUNK = 200
 
 
@@ -130,19 +131,25 @@ class TiffStack:
 
     The file is opened lazily on each :meth:`iter_chunks` pass; the frames are
     read as needed and returned as float32, so the whole stack is never resident
-    in memory at once.
+    in memory at once. Uncompressed, contiguous files (including ImageJ
+    hyperstacks larger than 4 GB, which hold a single TIFF page) are
+    memory-mapped; anything else is read page by page.
 
     Attributes:
         source_path: Path to the multi-page TIFF.
         frame_interval_s: Seconds between successive frames.
         name: Human-readable identifier (the file stem).
         shape: ``(n_frames, height, width)``.
+        channel: Colour sample kept from RGB(A) frames, or ``None`` for mono.
+        contiguous: Whether the image data can be memory-mapped.
     """
 
     source_path: Path
     frame_interval_s: float
     name: str
     shape: tuple[int, int, int]
+    channel: int | None = None
+    contiguous: bool = False
 
     @property
     def n_frames(self) -> int:
@@ -160,23 +167,35 @@ class TiffStack:
         return self.shape[2]
 
     def iter_chunks(self, chunk: int = DEFAULT_CHUNK) -> Iterator[tuple[int, NDArray[np.float32]]]:
-        """Yield ``(start_index, block)`` float32 slices, reading pages on demand."""
+        """Yield ``(start_index, block)`` float32 slices, reading frames on demand."""
         n, h, w = self.shape
+        if self.contiguous:
+            mapped = tifffile.memmap(str(self.source_path), mode="r")
+            for start in range(0, n, chunk):
+                raw = mapped[start : start + chunk]
+                if self.channel is not None:
+                    raw = raw[..., self.channel]
+                yield start, raw.astype(np.float32)
+            return
         with tifffile.TiffFile(str(self.source_path)) as tif:
             pages = tif.pages
             for start in range(0, n, chunk):
                 stop = min(start + chunk, n)
                 block = np.empty((stop - start, h, w), dtype=np.float32)
                 for k in range(start, stop):
-                    block[k - start] = pages[k].asarray()
+                    page = pages[k].asarray()
+                    block[k - start] = page[..., self.channel] if self.channel is not None else page
                 yield start, block
 
 
 def open_stack(path: str | Path, frame_interval_s: float = 1.0) -> TiffStack:
     """Open a multi-page TIFF as a streaming :class:`TiffStack` (no full load).
 
+    RGB(A) frames (``(T, H, W, 3|4)``, as written by some mono cameras) are
+    reduced to their first colour channel while streaming.
+
     Args:
-        path: Path to a plain ``(T, H, W)`` multi-page TIFF.
+        path: Path to a ``(T, H, W)`` or ``(T, H, W, 3|4)`` TIFF stack.
         frame_interval_s: Seconds between successive frames.
 
     Returns:
@@ -184,8 +203,8 @@ def open_stack(path: str | Path, frame_interval_s: float = 1.0) -> TiffStack:
 
     Raises:
         FileNotFoundError: If ``path`` does not exist.
-        ValueError: If the file is not a ``(T, H, W)`` page series with at least
-            :data:`MIN_FRAMES` frames.
+        ValueError: If the file is not a time series of 2-D (mono or RGB)
+            frames with at least :data:`MIN_FRAMES` frames.
     """
     path = Path(path)
     if not path.is_file():
@@ -193,15 +212,27 @@ def open_stack(path: str | Path, frame_interval_s: float = 1.0) -> TiffStack:
     with tifffile.TiffFile(str(path)) as tif:
         series = tif.series[0]
         shape = tuple(int(s) for s in series.shape)
-        page_shape = tuple(int(s) for s in tif.pages[0].shape)
-    if len(shape) != _TIME_SERIES_NDIM or len(page_shape) != 2:  # noqa: PLR2004
+        axes = series.axes
+        contiguous = series.dataoffset is not None
+    channel = None
+    if len(shape) == _TIME_SERIES_NDIM + 1 and axes.endswith("S") and shape[-1] in _RGB_SAMPLES:
+        channel = 0
+        shape = shape[:-1]
+    if len(shape) != _TIME_SERIES_NDIM:
         raise ValueError(
-            f"{path.name!r}: expected a plain (T, H, W) page series, got shape {shape}; "
+            f"{path.name!r}: expected a (T, H, W) or (T, H, W, 3) series, got shape {shape} ({axes}); "
             "load it with load_stack() and pass the array to stack_from_array() instead",
         )
     if shape[0] < MIN_FRAMES:
         raise ValueError(f"{path.name!r}: need at least {MIN_FRAMES} frames, got {shape[0]}")
-    return TiffStack(source_path=path, frame_interval_s=frame_interval_s, name=path.stem, shape=shape)  # type: ignore[arg-type]
+    return TiffStack(
+        source_path=path,
+        frame_interval_s=frame_interval_s,
+        name=path.stem,
+        shape=shape,  # type: ignore[arg-type]
+        channel=channel,
+        contiguous=contiguous,
+    )
 
 
 def _to_time_series(array: NDArray[np.generic], *, name: str) -> NDArray[np.float32]:

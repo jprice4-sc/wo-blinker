@@ -187,3 +187,77 @@ def save_figures(result: AnalysisResult, overview_path: Path, stats_path: Path, 
     stats_fig = make_stats_figure(result)
     stats_fig.savefig(stats_path, dpi=dpi)
     plt.close(stats_fig)
+
+
+def make_summary_figure(result: AnalysisResult) -> Figure:
+    """Build a compact one-page summary: detection map, dwell CCDF and key numbers.
+
+    Args:
+        result: A completed analysis.
+
+    Returns:
+        The Matplotlib figure (caller is responsible for closing it).
+    """
+    from .stats import format_summary  # noqa: PLC0415
+
+    unit = "s" if result.params.frame_interval_s != 1.0 else "frames"
+    on, off = _pooled_dwells(result)
+    fig, ax = plt.subplots(1, 3, figsize=(18, 5.5), gridspec_kw={"width_ratios": [1, 1, 0.9]})
+    _plot_detection(ax[0], result)
+    _plot_ccdf(ax[1], on, result.stats.on, "ON", "tab:red")
+    _plot_ccdf(ax[1], off, result.stats.off, "OFF", "tab:blue")
+    ax[1].set_xlabel(f"dwell time ({unit})")
+    ax[1].set_ylabel("P(T > t)")
+    ax[1].set_title("Dwell-time survival")
+    if ax[1].get_legend_handles_labels()[0]:
+        ax[1].legend(fontsize=8)
+    ax[2].axis("off")
+    ax[2].text(0.0, 1.0, format_summary(result.stats), va="top", ha="left", family="monospace", fontsize=9)
+    ax[2].set_title(result.stack_name, loc="left")
+    fig.tight_layout()
+    return fig
+
+
+def make_trace_figure(result: AnalysisResult, index: int) -> Figure:
+    """Plot one emitter's trace with its fitted ON/OFF levels and threshold.
+
+    Args:
+        result: A completed analysis.
+        index: Position of the emitter in ``result.emitters``.
+
+    Returns:
+        The Matplotlib figure (caller is responsible for closing it).
+
+    Raises:
+        IndexError: If ``index`` is out of range.
+    """
+    r = result.emitters[index]
+    trace = result.traces.traces[r.index]
+    t = np.arange(trace.size) * result.params.frame_interval_s
+    fig, ax = plt.subplots(figsize=(13, 4))
+    ax.plot(t, trace, lw=0.6, color="0.3")
+    ax.axhline(r.fit.on_level, color="tab:red", lw=1.0, label=f"ON level {r.fit.on_level:.4g}")
+    ax.axhline(r.fit.off_level, color="tab:blue", lw=1.0, label=f"OFF level {r.fit.off_level:.4g}")
+    ax.axhline(r.fit.threshold, color="k", ls=":", lw=0.8, label="threshold")
+    ax.set_xlabel(f"time ({'s' if result.params.frame_interval_s != 1.0 else 'frames'})")
+    ax.set_ylabel("intensity (counts)")
+    ax.set_title(
+        f"emitter {index} at ({r.row}, {r.col}): {r.category}, "
+        f"sep {r.fit.sep:.2f} sigma, contrast {r.fit.contrast:.2f}, {r.n_transitions} transitions",
+    )
+    ax.legend(fontsize=8, loc="upper right")
+    fig.tight_layout()
+    return fig
+
+
+def save_summary_figure(result: AnalysisResult, path: Path, dpi: int = 120) -> None:
+    """Render the summary figure to a PNG file and release it.
+
+    Args:
+        result: A completed analysis.
+        path: Destination file.
+        dpi: Output resolution in dots per inch.
+    """
+    fig = make_summary_figure(result)
+    fig.savefig(path, dpi=dpi)
+    plt.close(fig)

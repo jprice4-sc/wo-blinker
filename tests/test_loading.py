@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import tifffile
 
-from blinker.loading import load_stack, stack_from_array
+from blinker.loading import load_stack, open_stack, stack_from_array
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -56,3 +56,31 @@ def test_load_stack_roundtrip(tmp_path: Path) -> None:
 def test_missing_file_raises() -> None:
     with pytest.raises(FileNotFoundError):
         load_stack("/no/such/file.tif")
+
+
+def _stream(path: Path) -> np.ndarray:
+    stack = open_stack(path)
+    return np.concatenate([block for _, block in stack.iter_chunks(chunk=3)])
+
+
+@pytest.mark.parametrize("writer", ["tifffile", "imagej"])
+def test_open_stack_streams_mono(tmp_path: Path, writer: str) -> None:
+    data = (np.arange(7 * 8 * 8).reshape(7, 8, 8) % 255).astype(np.uint8)
+    path = tmp_path / "mono.tif"
+    tifffile.imwrite(str(path), data, imagej=writer == "imagej")
+    assert open_stack(path).shape == (7, 8, 8)
+    np.testing.assert_array_equal(_stream(path), data.astype(np.float32))
+
+
+@pytest.mark.parametrize("compression", [None, "zlib"])
+def test_open_stack_keeps_first_rgb_channel(tmp_path: Path, compression: str | None) -> None:
+    # Mono cameras sometimes save as RGB; contiguous files are memory-mapped,
+    # compressed ones fall back to page-by-page reading.
+    data = (np.arange(7 * 8 * 8 * 3).reshape(7, 8, 8, 3) % 255).astype(np.uint8)
+    path = tmp_path / "rgb.tif"
+    tifffile.imwrite(str(path), data, photometric="rgb", compression=compression)
+    stack = open_stack(path)
+    assert stack.shape == (7, 8, 8)
+    assert stack.channel == 0
+    assert stack.contiguous is (compression is None)
+    np.testing.assert_array_equal(_stream(path), data[..., 0].astype(np.float32))

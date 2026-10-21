@@ -1,0 +1,105 @@
+{
+  "stack_name": "testblink",
+  "params": {
+    "frame_interval_s": 0.001,
+    "projection": "mean",
+    "detection_percentile": 60.0,
+    "min_separation": 2,
+    "roi_radius": 2,
+    "max_spots": null,
+    "debounce_frames": 3,
+    "sep_threshold": 2.0,
+    "contrast_threshold": 0.1,
+    "min_transitions": 4,
+    "power_law_xmin_s": null
+  },
+  "stats": {
+    "n_spots": 6015,
+    "n_static": 5966,
+    "n_stepper": 11,
+    "n_blinkers": 38,
+    "blink_fraction": 0.006317539484621779,
+    "on": {
+      "summary": {
+        "n": 928,
+        "mean": 0.08764762931034484,
+        "median": 0.0175,
+        "std": 0.21111861292370246,
+        "minimum": 0.001,
+        "maximum": 2.625
+      },
+      "power_law": {
+        "alpha": 1.3325395305001035,
+        "alpha_stderr": 0.010916144883703877,
+        "xmin": 0.001,
+        "n": 928
+      },
+      "exponential": {
+        "tau": 0.08764762931034484,
+        "rate": 11.409321710906474,
+        "n": 928
+      }
+    },
+    "off": {
+      "summary": {
+        "n": 937,
+        "mean": 0.06714727854855923,
+        "median": 0.01,
+        "std": 0.2600584567639156,
+        "minimum": 0.001,
+        "maximum": 4.0
+      },
+      "power_law": {
+        "alpha": 1.3865856637511402,
+        "alpha_stderr": 0.012629203144202501,
+        "xmin": 0.001,
+        "n": 937
+      },
+      "exponential": {
+        "tau": 0.06714727854855923,
+        "rate": 14.892636330403548,
+        "n": 937
+      }
+    },
+    "amplitude": {
+      "n": 38,
+      "mean": 729.7808309606108,
+      "median": 676.8816608630256,
+      "std": 335.39204687770075,
+      "minimum": 285.86868244741686,
+      "maximum": 2101.326593969873
+    },
+    "contrast": {
+      "n": 38,
+      "mean": 0.16175605165135792,
+      "median": 0.1280708858417156,
+      "std": 0.06983069094639527,
+      "minimum": 0.10149633180463725,
+      "maximum": 0.36694323643777355
+    },
+    "separation": {
+      "n": 38,
+      "mean": 4.269661015160776,
+      "median": 3.9310137868968966,
+      "std": 1.8738322397154983,
+      "minimum": 2.0146864272373577,
+      "maximum": 10.697762391905908
+    },
+    "duty_cycle": {
+      "n": 38,
+      "mean": 0.5754406838035004,
+      "median": 0.6047987309141384,
+      "std": 0.3357915317685669,
+      "minimum": 0.04045211183819155,
+      "maximum": 0.9968272853460242
+    },
+    "cv": {
+      "n": 6015,
+      "mean": 0.025615510085128006,
+      "median": 0.02300691496612764,
+      "std": 0.01506005859955879,
+      "minimum": 0.010649021930356868,
+      "maximum": 0.3822161604790541
+    }
+  }
+}

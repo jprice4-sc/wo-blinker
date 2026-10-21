@@ -15,6 +15,7 @@ For a one-call analysis use :func:`analyze_file` (streams from disk) or
 
 from __future__ import annotations
 
+from .analyzer import Blinker
 from .detection import Spots, detect_spots, project
 from .loading import FrameSource, Stack, TiffStack, load_stack, open_stack, stack_from_array
 from .params import AnalysisParams
@@ -45,6 +46,7 @@ __all__ = [
     "AggregateStats",
     "AnalysisParams",
     "AnalysisResult",
+    "Blinker",
     "CombinedStats",
     "DwellStats",
     "EmitterResult",

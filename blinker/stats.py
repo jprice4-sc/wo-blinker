@@ -285,3 +285,38 @@ def combine(per_stack_results: list[list[EmitterResult]], params: AnalysisParams
         contrast=summarize(np.array([r.fit.contrast for r in blinkers], dtype=np.float64)),
         duty_cycle=summarize(np.array([r.on_fraction for r in blinkers], dtype=np.float64)),
     )
+
+
+def _format_dwell(label: str, dwell: DwellStats) -> list[str]:
+    """Render one dwell-time distribution and its fits as text lines."""
+    s = dwell.summary
+    lines = [f"{label} dwell: n={s.n}, mean={s.mean:.4g} s, median={s.median:.4g} s"]
+    if dwell.exponential is not None:
+        lines.append(f"  exponential tau = {dwell.exponential.tau:.4g} s")
+    if dwell.power_law is not None:
+        pl = dwell.power_law
+        lines.append(f"  power-law alpha = {pl.alpha:.3f} +/- {pl.alpha_stderr:.3f} (xmin {pl.xmin:.4g} s, n={pl.n})")
+    return lines
+
+
+def format_summary(stats: AggregateStats) -> str:
+    """Render the key population metrics as a human-readable block of text.
+
+    Args:
+        stats: Aggregate statistics for one stack.
+
+    Returns:
+        A multi-line summary string.
+    """
+    lines = [
+        (
+            f"spots: {stats.n_spots} (static {stats.n_static}, stepper {stats.n_stepper}, "
+            f"blinkers {stats.n_blinkers}; blink fraction {stats.blink_fraction:.1%})"
+        ),
+        *_format_dwell("ON", stats.on),
+        *_format_dwell("OFF", stats.off),
+        f"duty cycle: mean {stats.duty_cycle.mean:.3f}, median {stats.duty_cycle.median:.3f}",
+        f"contrast:   mean {stats.contrast.mean:.3f}, median {stats.contrast.median:.3f}",
+        f"separation: mean {stats.separation.mean:.3g} sigma",
+    ]
+    return "\n".join(lines)
